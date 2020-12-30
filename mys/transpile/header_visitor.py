@@ -8,6 +8,8 @@ from .utils import mys_to_cpp_type
 from .utils import mys_to_cpp_type_param
 from .utils import METHOD_OPERATORS
 from .utils import make_name
+from .utils import stripns
+from .utils import joinns
 
 class HeaderVisitor(BaseVisitor):
 
@@ -33,17 +35,13 @@ class HeaderVisitor(BaseVisitor):
 
         for name, trait_definitions in module_definitions.traits.items():
             self.context.define_trait(name, trait_definitions)
-            self.traits.append(f'class {name};')
+            self.traits.append(f'class {stripns(name)};')
 
         self.classes = []
 
         for name, class_definitions in module_definitions.classes.items():
             self.context.define_class(name, class_definitions)
-            self.classes += [
-                f'class {name};',
-                f'#define {self.prefix}_{name}_IMPORT_AS(__name__) \\',
-                f'    using __name__ = {self.namespace}::{name};'
-            ]
+            self.classes.append(f'class {stripns(name)};')
 
         for enum in module_definitions.enums.values():
             self.context.define_enum(enum.name, enum.type)
@@ -52,7 +50,7 @@ class HeaderVisitor(BaseVisitor):
 
         for functions in module_definitions.functions.values():
             for function in functions:
-                if function.name == 'main':
+                if stripns(function.name) == 'main':
                     main_found = True
 
                 self.functions += self.visit_function(function)
@@ -91,7 +89,7 @@ class HeaderVisitor(BaseVisitor):
                     f'    virtual {return_cpp_type} {method.name}({parameters}) = 0;')
 
         self.classes += [
-            f'class {name} : public Object {{',
+            f'class {stripns(name)} : public Object {{',
             'public:'
         ] + methods + [
             '};'
@@ -130,7 +128,7 @@ class HeaderVisitor(BaseVisitor):
 
         for trait_name, trait_node in definitions.implements.items():
             self.raise_if_trait_does_not_exist(trait_name, trait_node)
-            bases.append(f'public {trait_name}')
+            bases.append(f'public {stripns(trait_name)}')
 
         bases = ', '.join(bases)
 
@@ -144,7 +142,7 @@ class HeaderVisitor(BaseVisitor):
 
         for member in definitions.members.values():
             cpp_type = mys_to_cpp_type(member.type, self.context)
-            members.append(f'{cpp_type} {make_name(member.name)};')
+            members.append(f'{cpp_type.replace(".", "::")} {make_name(member.name)};')
 
         return members
 
@@ -171,7 +169,8 @@ class HeaderVisitor(BaseVisitor):
 
                 for (param_name, param_mys_type), _ in method.args:
                     cpp_type = mys_to_cpp_type_param(param_mys_type, self.context)
-                    parameters.append(f'{cpp_type} {make_name(param_name)}')
+                    parameters.append(
+                        f'{cpp_type.replace(".", "::")} {make_name(param_name)}')
 
                 parameters = ', '.join(parameters)
 
@@ -181,9 +180,10 @@ class HeaderVisitor(BaseVisitor):
                     return_cpp_type = 'void'
 
                 if method_name == name:
-                    methods.append(f'{method_name}({parameters});')
+                    methods.append(f'{stripns(method_name)}({parameters});')
                 else:
-                    methods.append(f'{return_cpp_type} {method_name}({parameters});')
+                    methods.append(
+                        f'{return_cpp_type.replace(".", "::")} {method_name}({parameters});')
 
         if '__init__' not in definitions.methods:
             parameters = []
@@ -196,10 +196,10 @@ class HeaderVisitor(BaseVisitor):
                 parameters.append(f'{cpp_type} {make_name(member.name)}')
 
             parameters = ', '.join(parameters)
-            methods.append(f'{name}({parameters});')
+            methods.append(f'{stripns(name)}({parameters});')
 
         if '__del__' not in definitions.methods:
-            methods.append(f'virtual ~{name}();')
+            methods.append(f'virtual ~{stripns(name)}();')
 
         if '__str__' not in definitions.methods:
             methods.append('String __str__() const;')
@@ -217,7 +217,8 @@ class HeaderVisitor(BaseVisitor):
                                    function.node)
 
         self.classes += [
-            f'class {name} : {bases}, public std::enable_shared_from_this<{name}> {{',
+            f'class {stripns(name)} : {bases}, '
+            f'public std::enable_shared_from_this<{stripns(name)}> {{',
             'public:'
         ] + indent_lines(members + methods) + [
             f'    void __format__(std::ostream& os) const;',
@@ -228,9 +229,7 @@ class HeaderVisitor(BaseVisitor):
         cpp_type = self.visit_cpp_type(variable.node.annotation)
 
         return [
-            f'extern {cpp_type} {variable.name};',
-            f'#define {self.prefix}_{variable.name}_IMPORT_AS(__name__) \\',
-            f'    static auto& __name__ = {self.namespace}::{variable.name};'
+            f'extern {cpp_type} {stripns(variable.name)};'
         ]
 
     def visit_function(self, function):
@@ -245,14 +244,7 @@ class HeaderVisitor(BaseVisitor):
         code = []
 
         if function.name != 'main' and not function.is_test:
-            code += [
-                f'{return_type} {function.name}({params});',
-                f'#define {self.prefix}_{function.name}_IMPORT_AS(__name__) \\',
-                f'    constexpr auto __name__ = [] (auto &&...args) {{ \\',
-                f'        return {self.namespace}::{function.name}(std::forward<'
-                f'decltype(args)>(args)...); \\',
-                f'    }};'
-            ]
+            code.append(f'{return_type} {stripns(function.name)}({params});')
 
         return code
 
@@ -287,12 +279,17 @@ class HeaderVisitor(BaseVisitor):
         module, name, asname = get_import_from_info(node, self.module_levels)
         module_hpp = module.replace('.', '/')
         self.includes.add(f'#include "{module_hpp}.mys.hpp"')
-        prefix = 'MYS_' + module.replace('.', '_').upper()
-        self.imported.add(f'{prefix}_{name}_IMPORT_AS({asname});')
         imported_module = self.definitions.get(module)
 
         if imported_module is None:
             raise CompileError(f"imported module '{module}' does not exist", node)
+
+        if name.startswith('_'):
+            raise CompileError(f"cannot import private definition '{name}'", node)
+
+        name = joinns(module, name)
+        asname = joinns(module, asname)
+        asname = name
 
         if name in imported_module.classes:
             self.context.define_class(asname,

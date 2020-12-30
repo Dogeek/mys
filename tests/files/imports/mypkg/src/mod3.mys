@@ -1,0 +1,4 @@
+class Fie:
+
+    def fum(self) -> u8:
+        return 10

@@ -1,3 +1,5 @@
+from .mod3 import Fie
+
 class Foo:
     a: i32
 
@@ -6,10 +8,8 @@ class Bar:
     def fie(self) -> Fie:
         return Fie()
 
-class Fie:
+class Fam:
+    pass
 
-    def fum(self) -> u8:
-        return 10
-
-def func4(a: i32) -> Foo:
+def func4(a: i32, fam: Fam) -> Foo:
     return Foo(a)

@@ -183,6 +183,12 @@ def make_name(name):
 
     return name
 
+def stripns(name):
+    return name.split(".")[-1]
+
+def joinns(module, name):
+    return f'{module}.{name}'
+
 class Variables:
 
     def __init__(self):
@@ -231,7 +237,7 @@ def format_binop(left, right, op_class):
         return f'({left} {op} {right})'
 
 def make_shared(cpp_type, values):
-    return f'std::make_shared<{cpp_type}>({values})'
+    return f'std::make_shared<{cpp_type.replace(".", "::")}>({values})'
 
 def shared_list_type(cpp_type):
     return f'SharedList<{cpp_type}>'
@@ -449,7 +455,7 @@ def mys_to_cpp_type(mys_type, context):
         elif mys_type == 'bytes':
             return 'Bytes'
         elif context.is_class_or_trait_defined(mys_type):
-            return f'std::shared_ptr<{mys_type}>'
+            return f'std::shared_ptr<{mys_type.replace(".", "::")}>'
         elif context.is_enum_defined(mys_type):
             return context.get_enum_type(mys_type)
         else:
@@ -495,7 +501,7 @@ def format_mys_type(mys_type):
 
         return f'{{{key}: {value}}}'
     else:
-        return str(mys_type)
+        return stripns(str(mys_type))
 
 def format_value_type(value_type):
     if isinstance(value_type, tuple):
@@ -730,6 +736,7 @@ class ValueTypeVisitor(ast.NodeVisitor):
         return self.visit(node.body)
 
     def visit_Attribute(self, node):
+        #print(ast.dump(node))
         name = node.attr
 
         if isinstance(node.value, ast.Name):
@@ -744,6 +751,7 @@ class ValueTypeVisitor(ast.NodeVisitor):
         else:
             value_type = self.visit(node.value)
 
+        #print('cc', value_type)
         if self.context.is_class_defined(value_type):
             member = self.context.get_class(value_type).members[name]
             value_type = member.type
@@ -843,7 +851,7 @@ class ValueTypeVisitor(ast.NodeVisitor):
 
     def visit_call_function(self, name, node):
         function = self.context.get_functions(name)[0]
-
+        #print(self.visit(function.node.returns))
         return mys_to_value_type(function.returns)
 
     def visit_call_class(self, mys_type, node):
@@ -927,7 +935,7 @@ class ValueTypeVisitor(ast.NodeVisitor):
             returns = method.returns
         else:
             raise CompileError(
-                f"class '{value_type}' has no method '{name}'",
+                f"class '{stripns(value_type)}' has no method '{name}'",
                 node)
 
         if isinstance(returns, dict):
@@ -1210,7 +1218,7 @@ class Context:
             raise CompileError(f"redefining variable '{name}'", node)
 
         if self.is_function_defined(name):
-            raise CompileError(f"'{name}' is a function", node)
+            raise CompileError(f"'{stripns(name)}' is a function", node)
 
         if not is_snake_case(name):
             raise CompileError("local variable names must be snake case", node)
@@ -1235,11 +1243,13 @@ class Context:
         return self._variables[name]
 
     def define_class(self, name, definitions):
+        #print('define_class:', name)
         self._classes[name] = definitions
 
     def is_class_defined(self, name):
         if not isinstance(name, str):
             return False
+        #print('is_class_defined:', name, name in self._classes)
 
         return name in self._classes
 
@@ -1512,7 +1522,7 @@ class BaseVisitor(ast.NodeVisitor):
             if name == 'self':
                 return 'shared_from_this()'
             else:
-                return make_name(name)
+                return make_name(name).replace(".", "::")
 
     def find_print_kwargs(self, node):
         end = ' << std::endl'
@@ -1753,7 +1763,7 @@ class BaseVisitor(ast.NodeVisitor):
         args = self.visit_call_params(function, node)
         self.context.mys_type = function.returns
 
-        return f'{name}({", ".join(args)})'
+        return f'{name.replace(".", "::")}({", ".join(args)})'
 
     def visit_call_class(self, mys_type, node):
         cls = self.context.get_class(mys_type)
@@ -1781,7 +1791,7 @@ class BaseVisitor(ast.NodeVisitor):
         args = ', '.join(args)
         self.context.mys_type = mys_type
 
-        return make_shared(mys_type, args)
+        return make_shared(mys_type.replace(".", "::"), args)
 
     def visit_call_enum(self, mys_type, node):
         raise_if_wrong_number_of_parameters(len(node.args), 1, node)
@@ -1789,7 +1799,7 @@ class BaseVisitor(ast.NodeVisitor):
         value = self.visit_value_check_type(node.args[0], cpp_type)
         self.context.mys_type = mys_type
 
-        return f'enum_{mys_type}_from_value({value})'
+        return f'enum_{mys_type.replace(".", "_")}_from_value({value})'
 
     def visit_call_builtin(self, name, node):
         if name == 'print':
@@ -2585,16 +2595,17 @@ class BaseVisitor(ast.NodeVisitor):
             self.context.mys_type = definitions.members[name].type
         else:
             raise CompileError(
-                f"class '{mys_type}' has no member '{name}'",
+                f"class '{stripns(mys_type)}' has no member '{name}'",
                 node)
 
         if value == 'self':
             value = 'this'
         elif name.startswith('_'):
-            raise CompileError(f"class '{mys_type}' member '{name}' is private",
-                               node)
+            raise CompileError(
+                f"class '{stripns(mys_type)}' member '{name}' is private",
+                node)
 
-        return value
+        return value.replace(".", "::")
 
     def visit_Attribute(self, node):
         name = node.attr
@@ -2606,7 +2617,7 @@ class BaseVisitor(ast.NodeVisitor):
                 enum_type = self.context.get_enum_type(value)
                 self.context.mys_type = value
 
-                return f'({enum_type}){value}::{name}'
+                return f'({enum_type}){value.replace(".", "::")}::{name}'
             elif self.context.is_variable_defined(value):
                 mys_type = self.context.get_variable_type(value)
             else:
@@ -2650,7 +2661,7 @@ class BaseVisitor(ast.NodeVisitor):
                                            self.context).visit(node.left)
         right_value_type = ValueTypeVisitor(self.source_lines,
                                             self.context).visit(node.comparators[0])
-
+        #print(left_value_type, right_value_type)
         if isinstance(node.ops[0], (ast.In, ast.NotIn)):
             if isinstance(right_value_type, Dict):
                 left_value_type, right_key_value_type = intersection_of(
@@ -2973,7 +2984,7 @@ class BaseVisitor(ast.NodeVisitor):
                                         target_mys_type,
                                         node.value)
 
-            code = f'{target} = {value};'
+            code = f'{target.replace(".", "::")} = {value};'
         else:
             code = self.visit_inferred_type_assign(node, target)
 
@@ -3152,7 +3163,7 @@ class BaseVisitor(ast.NodeVisitor):
 
                 if mys_type not in definitions.implements:
                     trait_type = format_mys_type(mys_type)
-                    class_type = self.context.mys_type
+                    class_type = format_mys_type(self.context.mys_type)
 
                     raise CompileError(
                         f"'{class_type}' does not implement trait '{trait_type}'",
@@ -3205,7 +3216,7 @@ class BaseVisitor(ast.NodeVisitor):
 
         code = self.visit_value_check_type(node.value, mys_type)
         cpp_type = self.mys_to_cpp_type(mys_type)
-        code = f'{cpp_type} {make_name(target)} = {code};'
+        code = f'{cpp_type} {make_name(stripns(target))} = {code};'
 
         return target, mys_type, code
 
@@ -3386,7 +3397,7 @@ class BaseVisitor(ast.NodeVisitor):
                 class_name = case.pattern.func.id
                 cases.append(
                     f'const auto& {casted} = '
-                    f'std::dynamic_pointer_cast<{class_name}>({subject_variable});\n'
+                    f'std::dynamic_pointer_cast<{class_name.replace(".", "::")}>({subject_variable});\n'
                     f'if ({casted}) {{\n' +
                     indent('\n'.join([self.visit(item) for item in case.body])) +
                     '\n}')
@@ -3397,7 +3408,7 @@ class BaseVisitor(ast.NodeVisitor):
                     self.context.define_variable(case.pattern.name, class_name, case)
                     cases.append(
                         f'const auto& {casted} = '
-                        f'std::dynamic_pointer_cast<{class_name}>({subject_variable});\n'
+                        f'std::dynamic_pointer_cast<{class_name.replace(".", "::")}>({subject_variable});\n'
                         f'if ({casted}) {{\n'
                         f'    const auto& {case.pattern.name} = '
                         f'std::move({casted});\n' +
@@ -3493,7 +3504,7 @@ class CppTypeVisitor(BaseVisitor):
         if cpp_type == 'string':
             return 'String'
         elif self.context.is_class_or_trait_defined(cpp_type):
-            return f'std::shared_ptr<{cpp_type}>'
+            return f'std::shared_ptr<{cpp_type.replace(".", "::")}>'
         elif self.context.is_enum_defined(cpp_type):
             return self.context.get_enum_type(cpp_type)
         elif cpp_type == 'bool':

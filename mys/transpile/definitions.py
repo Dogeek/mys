@@ -7,6 +7,7 @@ from .utils import is_pascal_case
 from .utils import TypeVisitor
 from .utils import INTEGER_TYPES
 from .utils import has_docstring
+from .utils import stripns
 
 class Function:
 
@@ -66,8 +67,8 @@ class Variable:
 
 class Definitions:
     """Defined variables, classes, traits, enums and functions for one
-    module. This information is useful when verifying that modules
-    uses this module correctly.
+    module. This information is useful when verifying that other
+    modules uses this module correctly.
 
     All function and method names are guaranteed to be snake
     case. Same applies to their parameter anmes.
@@ -88,21 +89,27 @@ class Definitions:
 
     def _check_unique_name(self, name, node, is_function=False):
         if name in self.variables:
-            raise CompileError(f"there is already a variable called '{name}'", node)
+            raise CompileError(
+                f"there is already a variable called '{stripns(name)}'",
+                node)
 
         if name in self.classes:
-            raise CompileError(f"there is already a class called '{name}'", node)
+            raise CompileError(f"there is already a class called '{stripns(name)}'",
+                               node)
 
         if name in self.traits:
-            raise CompileError(f"there is already a trait called '{name}'", node)
+            raise CompileError(f"there is already a trait called '{stripns(name)}'",
+                               node)
 
         if name in self.enums:
-            raise CompileError(f"there is already an enum called '{name}'", node)
+            raise CompileError(f"there is already an enum called '{stripns(name)}'",
+                               node)
 
         if not is_function:
             if name in self.functions:
-                raise CompileError(f"there is already a function called '{name}'",
-                                   node)
+                raise CompileError(
+                    f"there is already a function called '{stripns(name)}'",
+                    node)
 
     def define_variable(self, name, value, node):
         self._check_unique_name(name, node)
@@ -154,7 +161,7 @@ class FunctionVisitor(TypeVisitor):
         return args[::-1]
 
     def visit_FunctionDef(self, node):
-        if not is_snake_case(node.name):
+        if not is_snake_case(stripns(node.name)):
             raise CompileError("function names must be snake case", node)
 
         decorators = visit_decorator_list(node.decorator_list,
@@ -322,7 +329,7 @@ class DefinitionsVisitor(ast.NodeVisitor):
     def visit_AnnAssign(self, node):
         name = node.target.id
 
-        if not is_upper_snake_case(name):
+        if not is_upper_snake_case(stripns(name)):
             raise CompileError(
                 "global variable names must be upper case snake case", node)
 
@@ -382,7 +389,7 @@ class DefinitionsVisitor(ast.NodeVisitor):
     def visit_enum(self, node, decorators):
         enum_name = node.name
 
-        if not is_pascal_case(enum_name):
+        if not is_pascal_case(stripns(enum_name)):
             raise CompileError("enum names must be pascal case", node)
 
         self._enum_value = 0
@@ -400,7 +407,7 @@ class DefinitionsVisitor(ast.NodeVisitor):
     def visit_trait(self, node, decorators):
         trait_name = node.name
 
-        if not is_pascal_case(trait_name):
+        if not is_pascal_case(stripns(trait_name)):
             raise CompileError("trait names must be pascal case", node)
 
         methods = defaultdict(list)
@@ -421,7 +428,7 @@ class DefinitionsVisitor(ast.NodeVisitor):
     def visit_class(self, node, decorators):
         class_name = node.name
 
-        if not is_pascal_case(class_name):
+        if not is_pascal_case(stripns(class_name)):
             raise CompileError("class names must be pascal case", node)
 
         methods = defaultdict(list)

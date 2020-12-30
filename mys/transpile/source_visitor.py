@@ -17,6 +17,8 @@ from .utils import METHOD_OPERATORS
 from .utils import mys_to_cpp_type_param
 from .utils import BodyCheckVisitor
 from .utils import make_name
+from .utils import stripns
+from .utils import joinns
 from .definitions import is_method
 
 def default_value(cpp_type):
@@ -48,7 +50,7 @@ def create_class_init(class_name, member_names, member_types):
     params = ', '.join(params)
 
     return [
-        f'{class_name}::{class_name}({params})',
+        f'{stripns(class_name)}::{stripns(class_name)}({params})',
         '{'
     ] + indent_lines(body) + [
         '}'
@@ -56,14 +58,14 @@ def create_class_init(class_name, member_names, member_types):
 
 def create_class_del(class_name):
     return [
-        f'{class_name}::~{class_name}()',
+        f'{stripns(class_name)}::~{stripns(class_name)}()',
         '{',
         '}'
     ]
 
 def create_class_str(class_name):
     return [
-        f'String {class_name}::__str__() const',
+        f'String {stripns(class_name)}::__str__() const',
         '{',
         '    std::stringstream ss;',
         '    __format__(ss);',
@@ -82,9 +84,9 @@ def create_class_format(class_name, member_names):
         members.append(f'    os << "{name}=" << this->{make_name(name)};')
 
     return [
-        f'void {class_name}::__format__(std::ostream& os) const',
+        f'void {stripns(class_name)}::__format__(std::ostream& os) const',
         '{',
-        f'    os << "{class_name}(";'
+        f'    os << "{stripns(class_name)}(";'
     ] + members + [
         '    os << ")";',
         '}'
@@ -92,7 +94,7 @@ def create_class_format(class_name, member_names):
 
 def create_enum_from_integer(enum):
     code = [
-        f'{enum.type} enum_{enum.name}_from_value({enum.type} value)',
+        f'{enum.type} enum_{enum.name.replace(".", "_")}_from_value({enum.type} value)',
         '{',
         '    switch (value) {'
     ]
@@ -100,7 +102,7 @@ def create_enum_from_integer(enum):
     for name, value in enum.members:
         code += [
             f'    case {value}:',
-            f'        return ({enum.type}){enum.name}::{name};'
+            f'        return ({enum.type}){stripns(enum.name)}::{name};'
         ]
 
     code += [
@@ -208,6 +210,10 @@ class SourceVisitor(ast.NodeVisitor):
         if name.startswith('_'):
             raise CompileError(f"cannot import private definition '{name}'", node)
 
+        name = joinns(module, name)
+        asname = joinns(module, asname)
+        asname = name
+
         if name in imported_module.variables:
             self.context.define_global_variable(
                 asname,
@@ -248,7 +254,7 @@ class SourceVisitor(ast.NodeVisitor):
         self.context.define_enum(enum.name, enum.type)
 
         return [
-            f'enum class {enum.name} : {enum.type} {{'
+            f'enum class {stripns(enum.name)} : {enum.type} {{'
         ] + members + [
             '};'
         ]
@@ -330,7 +336,7 @@ class SourceVisitor(ast.NodeVisitor):
                                            self.context,
                                            self.filename).visit(item)))
 
-        if function_name == 'main':
+        if stripns(function_name) == 'main':
             self.add_package_main = True
 
             if return_cpp_type != 'void':
@@ -350,7 +356,7 @@ class SourceVisitor(ast.NodeVisitor):
 
             params = 'int __argc, const char *__argv[]'
 
-        prototype = f'{return_cpp_type} {function_name}({params})'
+        prototype = f'{return_cpp_type} {stripns(function_name)}({params})'
         decorators = self.get_decorator_names(node.decorator_list)
 
         if 'test' in decorators:
@@ -369,8 +375,8 @@ class SourceVisitor(ast.NodeVisitor):
                     '{'
                 ] + body + [
                     '}',
-                    f'static Test mys_test_{function_name}("{full_test_name}", '
-                    f'{function_name});',
+                    f'static Test mys_test_{function_name.replace(".", "_")}("{full_test_name}", '
+                    f'{function_name.replace(".", "::")});',
                     '#endif'
                 ]
         else:
@@ -452,7 +458,7 @@ class MethodVisitor(BaseVisitor):
 
         if method_name == '__init__':
             code = [
-                f'{self._class_name}::{self._class_name}({params})',
+                f'{stripns(self._class_name)}::{stripns(self._class_name)}({params})',
                 '{'
             ] + body + [
                 '}'
@@ -461,7 +467,8 @@ class MethodVisitor(BaseVisitor):
             raise CompileError('__del__ is not yet supported', node)
         else:
             code = [
-                f'{return_type} {self._class_name}::{method_name}({params})',
+                f'{return_type.replace(".", "::")} '
+                f'{stripns(self._class_name)}::{stripns(method_name)}({params})',
                 '{'
             ] + body +[
                 '}'

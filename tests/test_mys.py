@@ -15,6 +15,7 @@ def transpile_header(source, mys_path='', module_hpp=''):
 def transpile_source(source, mys_path='', module_hpp='', has_main=False):
     return transpile([Source(source,
                              mys_path=mys_path,
+                             module='foo.lib',
                              module_hpp=module_hpp,
                              has_main=has_main)])[0][1]
 
@@ -213,7 +214,7 @@ class Test(TestCase):
                 '  File "src/mod.mys", line 2\n'
                 f'        def __{op}__(self, other: Foo) -> bool:\n'
                 '        ^\n'
-                f'CompileError: __{op}__() must return Foo\n')
+                f'CompileError: __{op}__() must return foo.lib.Foo\n')
 
     def test_basic_print_function(self):
         source = transpile_source('def main():\n'
@@ -448,7 +449,8 @@ class Test(TestCase):
                 Source('from foo import bar\n'
                        '\n'
                        'def fie() -> i32:\n'
-                       '    return 2 * bar\n'),
+                       '    return 2 * bar\n',
+                       module='bar.lib'),
                 Source('BOO: i32 = 1', module='foo.lib')
             ])
 
@@ -1218,20 +1220,6 @@ class Test(TestCase):
             '                 ^\n'
             "CompileError: integer literal out of range for 'i64'\n")
 
-    def test_inferred_type_class_assignment(self):
-        source = transpile_source('class A:\n'
-                                  '    pass\n'
-                                  'def foo():\n'
-                                  '    value = A()\n'
-                                  '    print(value)\n')
-
-        self.assert_in('void foo(void)\n'
-                       '{\n'
-                       '    auto value = std::make_shared<A>();\n'
-                       '    std::cout << value << std::endl;\n'
-                       '}\n',
-                       source)
-
     def test_reassign_class_variable(self):
         source = transpile_source('class A:\n'
                                   '    pass\n'
@@ -1243,9 +1231,9 @@ class Test(TestCase):
 
         self.assert_in('void foo(void)\n'
                        '{\n'
-                       '    auto value = std::make_shared<A>();\n'
+                       '    auto value = std::make_shared<foo::lib::A>();\n'
                        '    std::cout << value << std::endl;\n'
-                       '    value = std::make_shared<A>();\n'
+                       '    value = std::make_shared<foo::lib::A>();\n'
                        '    std::cout << value << std::endl;\n'
                        '}\n',
                        source)
@@ -1257,24 +1245,6 @@ class Test(TestCase):
                                   module_hpp='foo/lib.mys.hpp')
 
         self.assertNotIn('test_foo', header)
-
-    def test_enum_as_function_parameter_and_return_value(self):
-        source = transpile_source(
-            '@enum\n'
-            'class City:\n'
-            '\n'
-            '    Linkoping = 5\n'
-            '    Norrkoping = 8\n'
-            '    Vaxjo = 10\n'
-            'def enum_foo(source: City, destination: City) -> City:\n'
-            '    return City.Vaxjo\n')
-
-        self.assert_in(
-            'i64 enum_foo(i64 source, i64 destination)\n'
-            '{\n'
-            '    return (i64)City::Vaxjo;\n'
-            '}\n',
-            source)
 
     def test_return_i64_from_function_returning_string(self):
         with self.assertRaises(Exception) as cm:
@@ -1412,34 +1382,6 @@ class Test(TestCase):
                                   '    print(v)\n')
 
         self.assert_in('18446744073709551615ull', source)
-
-    def test_call_member_method(self):
-        source = transpile_source('class Foo:\n'
-                                  '    def fam(self):\n'
-                                  '        pass\n'
-                                  'class Bar:\n'
-                                  '    foo: Foo\n'
-                                  'def foo(bar: Bar):\n'
-                                  '    bar.foo.fam()')
-
-        self.assert_in(
-            'shared_ptr_not_none(shared_ptr_not_none(bar)->foo)->fam();',
-            source)
-
-    def test_global_class_variable(self):
-        source = transpile_source('class Foo:\n'
-                                  '    pass\n'
-                                  'GLOB: Foo = Foo()\n')
-
-        self.assert_in('std::shared_ptr<Foo> GLOB = std::make_shared<Foo>();',
-                       source)
-
-    def test_global_variable_function_call(self):
-        source = transpile_source('def foo(v: i32) -> i32:\n'
-                                  '    return 2 * v\n'
-                                  'GLOB: i32 = foo(1)\n')
-
-        self.assert_in('i32 GLOB = foo(1);', source)
 
     def test_assign_256_to_u8(self):
         with self.assertRaises(Exception) as cm:
@@ -1655,16 +1597,6 @@ class Test(TestCase):
             '        value = (i8(-1) * u32(5))\n'
             '                 ^\n'
             "CompileError: cannot compare 'i8' and 'u32'\n")
-
-    def test_global_class_variable_in_function_call(self):
-        source = transpile_source('class Foo:\n'
-                                  '    pass\n'
-                                  'def foo(v: Foo) -> Foo:\n'
-                                  '    return v\n'
-                                  'GLOB: Foo = foo(Foo())\n')
-
-        self.assert_in('std::shared_ptr<Foo> GLOB = foo(std::make_shared<Foo>());',
-                       source)
 
     def test_function_call(self):
         source = transpile_source('def foo(a: i32, b: f32):\n'

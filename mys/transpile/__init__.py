@@ -16,6 +16,9 @@ from .imports_visitor import ImportsVisitor
 from .definitions import find_definitions
 from .header_visitor import HeaderVisitor
 from .source_visitor import SourceVisitor
+from .name_resolver import add_imports
+from .name_resolver import NamesTransformer
+from .name_resolver import DefinitionsVisitor
 
 class TracebackLexer(RegexLexer):
 
@@ -106,7 +109,26 @@ def transpile(sources):
     try:
         for source, tree in zip(sources, trees):
             ImportsVisitor().visit(tree)
-            
+
+        fully_qualified_names = {}
+        imports = {}
+
+        for source, tree in zip(sources, trees):
+            module = source.module
+            fully_qualified_names[module] = {}
+            imports[module] = {}
+            DefinitionsVisitor(module,
+                               fully_qualified_names[module],
+                               imports[module]).visit(tree)
+
+        for source, tree in zip(sources, trees):
+            module = source.module
+            add_imports(module, fully_qualified_names, imports)
+
+        for source, tree in zip(sources, trees):
+            module = source.module
+            NamesTransformer(module, fully_qualified_names[module]).visit(tree)
+
         for source, tree in zip(sources, trees):
             definitions[source.module] = find_definitions(tree,
                                                           source.contents.split('\n'))
