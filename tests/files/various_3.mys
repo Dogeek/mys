@@ -323,6 +323,9 @@ def test_string_to_utf8():
         b"\xe6\x98\xaf\xe5\x8f\xb8\xe6\xb3\x95\xe9\x83\xa8\xe9\x95\xbf\xe3"
         b"\x80\x82\xe8\xaf\xb7\xe9\x97\xae\xe6\x9c\x89\xe4\xbd\x95\xe6\xa0"
         b"\xb9")
+    assert s.get(0) == '士'
+    assert s.get(1) == '师'
+    assert s.get(2) == '」'
 
 @test
 def test_string_upper():
@@ -330,11 +333,68 @@ def test_string_upper():
     s.upper()
     assert s == "HELLO!"
 
+    #assert "ß".casefold() == "ss"
+
+    #x = "σταθερός" # special case for last sigma
+
+    assert "\U0001f60a" == "😊"
+    assert "\N{SMILING FACE WITH SMILING EYES}" == "😊"
+
+    #s = "Τάχιστη αλώπηξ βαφής ψημένη γη - Mary Had A Little Lamb"
+    #s.upper()
+    #assert s == "ΤΆΧΙΣΤΗ ΑΛΏΠΗΞ ΒΑΦΉΣ ΨΗΜΈΝΗ ΓΗ - MARY HAD A LITTLE LAMB"
+    #s.lower()
+    #assert s == "τάχιστη αλώπηξ βαφής ψημένη γη - mary had a little lamb"
+
 @test
 def test_string_lower():
     s = "Hello!"
     s.lower()
     assert s == "hello!"
+
+@test
+def test_string_methods():
+    x = "z".join(["a"])
+    assert x == "a"
+
+    x = ",".join(["a", "b"])
+    assert x == "a,b"
+
+    x = "bar"
+    assert x.to_upper() == "BAR"
+    assert x == "bar"
+
+    x = "BAR"
+    assert x.to_lower() == "bar"
+    assert x == "BAR"
+
+    assert " ".join(["foo", "baz"]) == "foo baz"
+
+    x = "foobarbaz"
+    assert x.split("bar") == ["foo", "baz"]
+
+    x = "find t or t"
+    assert x.find('t', 0, 6) == 5
+    assert x.find('t', 0, 5) == -1
+    #assert x.find('t', 6, -1) == 10
+    assert x.find('q', 0, -1) == -1
+
+    assert x.cut('t') == "find "
+    assert x == " or t"
+
+#@test
+def test_string_methods_2():
+    x = " \t  leading trailing  \t  "
+    x.strip(" \t")
+    assert x == "leading trailing"
+
+    x = "replace"
+    x.replace('r', 'x')
+    assert x == "xeplace"
+
+    x = "replace"
+    x.replace("re", "foo")
+    assert x == "fooplace"
 
 class ReturnFoo:
     v: i32

@@ -345,11 +345,35 @@ void String::upper() const
     }
 }
 
+String String::to_upper() const
+{
+    String res("");
+    res.m_string = std::make_shared<std::vector<Char>>(*m_string);
+
+    for (auto& ch : *res.m_string) {
+        ch.m_value = toupper(ch.m_value);
+    }
+
+    return res;
+}
+
 void String::lower() const
 {
     for (auto& ch : *m_string) {
         ch.m_value = tolower(ch.m_value);
     }
+}
+
+String String::to_lower() const
+{
+    String res("");
+    res.m_string = std::make_shared<std::vector<Char>>(*m_string);
+
+    for (auto& ch : *res.m_string) {
+        ch.m_value = tolower(ch.m_value);
+    }
+
+    return res;
 }
 
 Bool String::starts_with(const String& value) const
@@ -456,6 +480,85 @@ String String::join(const std::shared_ptr<List<String>>& list) const
         ++j;
     }
     return res;
+}
+
+i64 String::find(const Char& separator, i64 start, i64 end) const
+{
+    i64 res = -1;
+    if (end == -1) {
+        end = m_string->size();
+    }
+    auto i_begin = m_string->begin() + start;
+    auto i_end = m_string->begin() + end;
+    auto s = std::find(i_begin, i_end, separator);
+    if (s == i_end) {
+        return -1;
+    }
+    return s - i_begin;
+}
+
+i64 String::find(const String& separator, i64 start, i64 end) const
+{
+    i64 res = -1;
+    if (end == -1) {
+        end = m_string->size();
+    }
+    auto i_begin = m_string->begin() + start;
+    auto i_end = m_string->end() + end;
+    auto s = std::search(i_begin, i_end,
+                         separator.m_string->begin(), separator.m_string->end());
+    if (s == i_end) {
+        return -1;
+    }
+    return s - i_begin;
+}
+
+std::shared_ptr<List<String>> String::split(const String& separator) const
+{
+
+    auto res = std::make_shared<List<String>>();
+    auto i = m_string->begin();
+    while (i != m_string->end()) {
+        auto s = std::search(i, m_string->end(),
+                             separator.m_string->begin(), separator.m_string->end());
+        String r("");
+        r.m_string->resize(separator.m_string->size());
+        std::copy(i, s, r.m_string->begin());
+        i = s + separator.m_string->size();
+        res->append(r);
+        if (s == m_string->end()) {
+            break;
+        }
+    }
+    return res;
+}
+
+void String::strip(const String& chars) const
+{
+}
+
+String String::cut(const Char& chr) const
+{
+    auto i = std::find(m_string->begin(), m_string->end(), chr);
+    if (i == m_string->end()) {
+        return String("a");
+    }
+
+    String res = String("");
+    res.m_string->resize(i - m_string->begin());
+    std::copy(m_string->begin(), i, res.m_string->begin());
+
+    m_string->erase(m_string->begin(), i + 1);
+
+    return res;
+}
+
+void String::replace(const Char& old, const Char& _new) const
+{
+}
+
+void String::replace(const String& old, const String& _new) const
+{
 }
 
 String bytes_str(const Bytes& value)

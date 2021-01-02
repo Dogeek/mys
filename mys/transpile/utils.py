@@ -911,12 +911,27 @@ class ValueTypeVisitor(ast.NodeVisitor):
             raise InternalError(f"dict method '{name}' not supported", node)
 
     def visit_call_method_string(self, name, node):
-        if name == 'to_utf8':
-            return 'bytes'
-        elif name == 'join':
-            return 'string'
-        else:
+        methods = dict(
+            to_utf8=[0, 'bytes'],
+            upper=[0, None],
+            lower=[0, None],
+            starts_with=[1, 'bool'],
+            join=[1, 'string'],
+            get=[1, 'char'],
+            to_lower=[0, 'string'],
+            to_upper=[0, 'string'],
+            split=[1, ['string']],
+            strip=[1, None],
+            find=[3, 'i64'],
+            cut=[1, 'string'],
+            replace=[2, None]
+        )
+
+        spec = methods.get(name, None)
+        if spec is None:
             raise InternalError(f"string method '{name}' not supported", node)
+
+        return spec[1]
 
     def visit_call_method_class(self, name, value_type, node):
         definitions = self.context.get_class(value_type)
@@ -1872,20 +1887,28 @@ class BaseVisitor(ast.NodeVisitor):
             raise CompileError('dict method not implemented', node)
 
     def visit_call_method_string(self, name, args, node):
-        if name == 'to_utf8':
-            raise_if_wrong_number_of_parameters(len(args), 0, node)
-            self.context.mys_type = 'bytes'
-        elif name in ['upper', 'lower']:
-            raise_if_wrong_number_of_parameters(len(args), 0, node)
-            self.context.mys_type = None
-        elif name == 'starts_with':
-            raise_if_wrong_number_of_parameters(len(args), 1, node)
-            self.context.mys_type = 'bool'
-        elif name == 'join':
-            raise_if_wrong_number_of_parameters(len(args), 1, node)
-            self.context.mys_type = 'string'
-        else:
+        methods = dict(
+            to_utf8=[0, 'bytes'],
+            upper=[0, None],
+            lower=[0, None],
+            starts_with=[1, 'bool'],
+            join=[1, 'string'],
+            get=[1, 'char'],
+            to_lower=[0, 'string'],
+            to_upper=[0, 'string'],
+            split=[1, ['string']],
+            strip=[1, None],
+            find=[3, 'i64'],
+            cut=[1, 'string'],
+            replace=[2, None]
+        )
+
+        spec = methods.get(name, None)
+        if spec is None:
             raise CompileError('string method not implemented', node)
+
+        self.context.mys_type = spec[1]
+        raise_if_wrong_number_of_parameters(len(args), spec[0], node)
 
         return '.'
 
