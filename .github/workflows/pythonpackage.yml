@@ -50,6 +50,29 @@ jobs:
         $Env:PYTHONUTF8 = 1
         python -m unittest tests.test_mys
 
+  windows-msys2:
+
+    runs-on: windows-latest
+
+    steps:
+    - uses: actions/checkout@v1
+    - name: Set up Python 3.8
+      uses: actions/setup-python@v1
+      with:
+        python-version: 3.8
+    - uses: msys2/setup-msys2@v2
+      with:
+        update: true
+        install: >-
+          git
+          base-devel
+    - name: Install dependencies
+      run: |
+        python --version
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install pylint
+        
   linux:
 
     runs-on: ubuntu-20.04
@@ -98,7 +121,7 @@ jobs:
         make test-install
 
   release:
-    needs: [macos, windows, linux, linux-install-and-ccache]
+    needs: [macos, windows, windows-msys2, linux, linux-install-and-ccache]
     runs-on: ubuntu-20.04
     if: startsWith(github.ref, 'refs/tags')
 
