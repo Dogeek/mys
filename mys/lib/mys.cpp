@@ -136,8 +136,8 @@ int main()
             test_p->m_func();
             result_p = COLOR(GREEN, " ✔");
             passed++;
-        } catch (std::exception &e) {
-            std::cout << "Message: " << e << std::endl;
+        } catch (const __Error &e) {
+            std::cout << PrintString(e.m_error->__str__()) << std::endl;
             result_p = COLOR(RED, " ✘");
             failed++;
         }
@@ -882,14 +882,21 @@ String string_str(const String& value)
     }
 }
 
-// Exception::Exception(const char *name_p, String message)
-// {
-//     m_what = String(name_p);
-//     m_what += ": ";
-//     m_what += message;
-//     m_what_bytes = m_what.to_utf8();
-//     m_what_bytes += 0; // NULL termination.
-// }
+String string_with_quotes(const String& value)
+{
+    if (value.m_string) {
+        String res("\"");
+
+        res.m_string->insert(res.m_string->end(),
+                             value.m_string->begin(),
+                             value.m_string->end());
+        res += "\"";
+
+        return res;
+    } else {
+        return String("None");
+    }
+}
 
 void Object::__format__(std::ostream& os) const
 {
@@ -900,63 +907,15 @@ String Object::__str__()
     return String("Object()");
 }
 
-void TypeError::__throw()
+void AssertionError::__throw()
 {
-    throw __TypeError(shared_from_this());
+    throw __AssertionError(shared_from_this());
 }
 
-String TypeError::__str__()
+String AssertionError::__str__()
 {
     std::stringstream ss;
-    ss << "TypeError(message=" << m_message << ")";
-    return String(ss.str().c_str());
-}
-
-void ValueError::__throw()
-{
-    throw __ValueError(shared_from_this());
-}
-
-String ValueError::__str__()
-{
-    std::stringstream ss;
-    ss << "ValueError(message=" << m_message << ")";
-    return String(ss.str().c_str());
-}
-
-void GeneralError::__throw()
-{
-    throw __GeneralError(shared_from_this());
-}
-
-String GeneralError::__str__()
-{
-    std::stringstream ss;
-    ss << "GeneralError(message=" << m_message << ")";
-    return String(ss.str().c_str());
-}
-
-void NoneError::__throw()
-{
-    throw __NoneError(shared_from_this());
-}
-
-String NoneError::__str__()
-{
-    std::stringstream ss;
-    ss << "NoneError(message=" << m_message << ")";
-    return String(ss.str().c_str());
-}
-
-void KeyError::__throw()
-{
-    throw __KeyError(shared_from_this());
-}
-
-String KeyError::__str__()
-{
-    std::stringstream ss;
-    ss << "KeyError(message=" << m_message << ")";
+    ss << "AssertionError(message=" << m_message << ")";
     return String(ss.str().c_str());
 }
 
@@ -972,6 +931,30 @@ String IndexError::__str__()
     return String(ss.str().c_str());
 }
 
+void KeyError::__throw()
+{
+    throw __KeyError(shared_from_this());
+}
+
+String KeyError::__str__()
+{
+    std::stringstream ss;
+    ss << "KeyError(message=" << m_message << ")";
+    return String(ss.str().c_str());
+}
+
+void NoneError::__throw()
+{
+    throw __NoneError(shared_from_this());
+}
+
+String NoneError::__str__()
+{
+    std::stringstream ss;
+    ss << "NoneError(message=" << m_message << ")";
+    return String(ss.str().c_str());
+}
+
 void NotImplementedError::__throw()
 {
     throw __NotImplementedError(shared_from_this());
@@ -984,30 +967,6 @@ String NotImplementedError::__str__()
     return String(ss.str().c_str());
 }
 
-void ZeroDivisionError::__throw()
-{
-    throw __ZeroDivisionError(shared_from_this());
-}
-
-String ZeroDivisionError::__str__()
-{
-    std::stringstream ss;
-    ss << "ZeroDivisionError(message=" << m_message << ")";
-    return String(ss.str().c_str());
-}
-
-void AssertionError::__throw()
-{
-    throw __AssertionError(shared_from_this());
-}
-
-String AssertionError::__str__()
-{
-    std::stringstream ss;
-    ss << "AssertionError(message=" << m_message << ")";
-    return String(ss.str().c_str());
-}
-
 void SystemExitError::__throw()
 {
     throw __SystemExitError(shared_from_this());
@@ -1017,5 +976,29 @@ String SystemExitError::__str__()
 {
     std::stringstream ss;
     ss << "SystemExitError(message=" << m_message << ")";
+    return String(ss.str().c_str());
+}
+
+void UnreachableError::__throw()
+{
+    throw __UnreachableError(shared_from_this());
+}
+
+String UnreachableError::__str__()
+{
+    std::stringstream ss;
+    ss << "UnreachableError(message=" << m_message << ")";
+    return String(ss.str().c_str());
+}
+
+void ValueError::__throw()
+{
+    throw __ValueError(shared_from_this());
+}
+
+String ValueError::__str__()
+{
+    std::stringstream ss;
+    ss << "ValueError(message=" << m_message << ")";
     return String(ss.str().c_str());
 }

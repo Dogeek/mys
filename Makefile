@@ -76,6 +76,9 @@ remove-coverage:
 test-parallel: $(TEST_FILES:%=%.parallel)
 	$(COMBINE)
 	$(COVERAGE) html
+	@echo
+	@echo "Open $$(readlink -f htmlcov/index.html) in a web browser."
+	@echo
 
 lint:
 	pylint $$(git ls-files "*.py" \
@@ -106,6 +109,7 @@ help:
 	@echo "test-install               Create a dummy release and perform basic"
 	@echo "                           tests on it."
 	@echo "lint                       Lint the code."
+	@echo "style                      Style the code."
 	@echo "docs                       Build the documentation."
 	@echo
 	@echo "NOTE: Always use -j <number> for faster execution!"

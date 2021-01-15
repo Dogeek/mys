@@ -8,10 +8,20 @@ any C++ program.
 Strings, bytes, tuples, lists, dicts and classes are normally
 allocated on the heap and managed by `C++ shared pointers`_. Objects
 that are known not to outlive a function are allocated on the
-stack. **The latter is not yet implemented.**
+stack.
 
-Reference cycles are not detected and will result in memory leaks.
+.. warning::
 
-There is no garbage collector.
+   Stack allocations are not yet implemented.
+
+Reference cycles are not detected and will result in memory leaks. The
+plan is to make the programmer manually break reference cycles by
+defining members as ``weak``.
+
+.. warning::
+
+   Weak references are not yet implemented.
+
+There is no garbage collector. We want deterministic applications.
 
 .. _C++ shared pointers: https://en.cppreference.com/w/cpp/memory/shared_ptr

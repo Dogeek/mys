@@ -30,6 +30,7 @@ from .utils import make_shared
 from .utils import make_shared_dict
 from .utils import make_shared_list
 from .utils import mys_to_cpp_type
+from .utils import mys_to_cpp_type_param
 from .utils import raise_types_differs
 from .utils import split_dict_mys_type
 from .value_type_visitor import Dict
@@ -135,13 +136,30 @@ def raise_if_wrong_number_of_parameters(actual_nargs,
             node)
 
 
-def format_str(value, mys_type):
+def format_str(value, mys_type, context):
     if is_primitive_type(mys_type):
         return f'String({value})'
     elif mys_type == 'string':
         return f'string_str({value})'
     elif mys_type == 'bytes':
         return f'bytes_str({value})'
+    elif context.is_enum_defined(mys_type):
+        return f'String({value})'
+    else:
+        none = handle_string("None")
+
+        return f'({value} ? shared_ptr_not_none({value})->__str__() : {none})'
+
+
+def format_assert_str(value, mys_type, context):
+    if is_primitive_type(mys_type):
+        return f'String({value})'
+    elif mys_type == 'string':
+        return f'string_with_quotes({value})'
+    elif mys_type == 'bytes':
+        return f'bytes_str({value})'
+    elif context.is_enum_defined(mys_type):
+        return f'String({value})'
     else:
         none = handle_string("None")
 
@@ -552,7 +570,7 @@ class BaseVisitor(ast.NodeVisitor):
         mys_type = self.context.mys_type
         self.context.mys_type = 'string'
 
-        return format_str(value, mys_type)
+        return format_str(value, mys_type, self.context)
 
     def handle_list(self, node):
         raise_if_wrong_number_of_parameters(len(node.args), 1, node)
@@ -1048,6 +1066,11 @@ class BaseVisitor(ast.NodeVisitor):
             values = ', '.join([str(v) for v in node.value])
 
             return f'Bytes({{{values}}})'
+        elif isinstance(node.value, tuple):
+            raise InternalError(
+                'regular expressions are not yet supported - '
+                f'pattern: "{node.value[0]}", flags: "{node.value[1]}"',
+                node)
         else:
             raise InternalError("constant node", node)
 
@@ -1240,11 +1263,15 @@ class BaseVisitor(ast.NodeVisitor):
 
         key = node.target.elts[0]
         key_name = key.id
-        self.context.define_local_variable(key_name, key_mys_type, key)
+
+        if not key_name.startswith('_'):
+            self.context.define_local_variable(key_name, key_mys_type, key)
 
         value = node.target.elts[1]
         value_name = value.id
-        self.context.define_local_variable(value_name, value_mys_type, value)
+
+        if not value_name.startswith('_'):
+            self.context.define_local_variable(value_name, value_mys_type, value)
 
         body = indent('\n'.join([
             self.visit(item)
@@ -1903,7 +1930,7 @@ class BaseVisitor(ast.NodeVisitor):
 
         for handler in node.handlers:
             if handler.type is None:
-                exception = 'std::exception'
+                exception = '__Error'
             else:
                 exception = f'__{handler.type.id}'
 
@@ -1913,11 +1940,16 @@ class BaseVisitor(ast.NodeVisitor):
             variable = ''
 
             if handler.name is not None:
-                variable = f'    const auto& {handler.name} = {temp}.m_error;'
-                self.context.define_local_variable(
-                    handler.name,
-                    self.context.make_full_name(handler.type.id),
-                    node)
+                full_name = self.context.make_full_name(handler.type.id)
+
+                if exception == '__Error':
+                    variable = f'    const auto& {handler.name} = {temp}.m_error;'
+                else:
+                    variable = (
+                        f'    const auto& {handler.name} = std::dynamic_pointer_cast'
+                        f'<{dot2ns(full_name)}>({temp}.m_error);')
+
+                self.context.define_local_variable(handler.name, full_name, node)
 
             handlers.append('\n'.join([
                 f'}} catch (const {exception}& {temp}) {{',
@@ -1983,6 +2015,8 @@ class BaseVisitor(ast.NodeVisitor):
             mys_type = self.context.mys_type
 
             if mys_type in BUILTIN_ERRORS:
+                pass
+            elif mys_type == 'Error':
                 pass
             elif self.context.is_class_defined(mys_type):
                 definitions = self.context.get_class_definitions(mys_type)
@@ -2236,6 +2270,125 @@ class BaseVisitor(ast.NodeVisitor):
 
         return make_shared_dict(key_cpp_type, value_cpp_type, items)
 
+    def visit_value_check_type_list_comp(self, node, mys_type):
+        if len(node.generators) != 1:
+            raise CompileError("only one for-loop allowed", node)
+
+        local_variables = list(self.context.local_variables.items())
+        local_variables.sort()
+
+        self.context.push()
+        result_cpp_type = self.mys_to_cpp_type(mys_type)
+        result_variable = self.unique('result')
+        result_item_cpp_type = self.mys_to_cpp_type(mys_type[0])
+        value = make_shared_list(result_item_cpp_type, '')
+        self.context.define_local_variable(result_variable, mys_type, node)
+        generator = node.generators[0]
+        body = [
+            ast.Expr(
+                value=ast.Call(
+                    func=ast.Attribute(
+                        value=ast.Name(id=result_variable),
+                        attr='append'),
+                    args=[node.elt]))
+        ]
+
+        if len(generator.ifs) > 1:
+            raise CompileError("at most one if allowed", node)
+
+        if generator.ifs:
+            body = [ast.If(test=generator.ifs[0],
+                           body=body,
+                           orelse=[])]
+
+        code = '\n'.join([
+            f'{result_cpp_type} {result_variable} = {value};',
+            self.visit_For(
+                ast.fix_missing_locations(
+                    ast.For(target=generator.target,
+                            iter=generator.iter,
+                            body=body))),
+            f'\nreturn {result_variable};'
+        ])
+        function_name = self.unique('list_comprehension')
+        parameters = ', '.join([
+            f'{mys_to_cpp_type_param(mys_type, self.context)} {name}'
+            for name, mys_type in local_variables
+        ])
+        function_code = '\n'.join([
+            f'static {result_cpp_type} {function_name}({parameters})',
+            '{',
+            indent(code),
+            '}'
+        ])
+        self.context.comprehensions.append(function_code)
+        self.context.pop()
+        self.context.mys_type = mys_type
+        parameters = ', '.join([name for name, _ in local_variables])
+
+        return f'{function_name}({parameters})'
+
+    def visit_value_check_type_dict_comp(self, node, mys_type):
+        if len(node.generators) != 1:
+            raise CompileError("only one for-loop allowed", node)
+
+        local_variables = list(self.context.local_variables.items())
+        local_variables.sort()
+
+        self.context.push()
+        result_cpp_type = self.mys_to_cpp_type(mys_type)
+        result_variable = self.unique('result')
+        key_mys_type, value_mys_type = split_dict_mys_type(mys_type)
+        key_cpp_type = self.mys_to_cpp_type(key_mys_type)
+        value_cpp_type = self.mys_to_cpp_type(value_mys_type)
+        value = make_shared_dict(key_cpp_type, value_cpp_type, '')
+        self.context.define_local_variable(result_variable, mys_type, node)
+        generator = node.generators[0]
+        body = [
+            ast.Assign(
+                targets=[
+                    ast.Subscript(
+                        slice=node.key,
+                        value=ast.Name(id=result_variable))
+                ],
+                value=node.value)
+        ]
+
+        if len(generator.ifs) > 1:
+            raise CompileError("at most one if allowed", node)
+
+        if generator.ifs:
+            body = [ast.If(test=generator.ifs[0],
+                           body=body,
+                           orelse=[])]
+
+        code = '\n'.join([
+            f'{result_cpp_type} {result_variable} = {value};',
+            self.visit_For(
+                ast.fix_missing_locations(
+                    ast.For(target=generator.target,
+                            iter=generator.iter,
+                            body=body))),
+            f'\nreturn {result_variable};'
+        ])
+        function_name = self.unique('list_comprehension')
+        parameters = ', '.join([
+            f'{mys_to_cpp_type_param(mys_type, self.context)} {name}'
+            for name, mys_type in local_variables
+        ])
+        function_code = '\n'.join([
+            f'static {result_cpp_type} {function_name}({parameters})',
+            '{',
+            indent(code),
+            '}'
+        ])
+        self.context.comprehensions.append(function_code)
+        self.context.pop()
+        self.context.mys_type = mys_type
+        parameters = ', '.join([name for name, _ in local_variables])
+
+        return f'{function_name}({parameters})'
+
     def visit_value_check_type_other(self, node, mys_type):
         value = self.visit(node)
 
@@ -2269,6 +2422,10 @@ class BaseVisitor(ast.NodeVisitor):
             value = self.visit_value_check_type_list(node, mys_type)
         elif isinstance(node, ast.Dict):
             value = self.visit_value_check_type_dict(node, mys_type)
+        elif isinstance(node, ast.ListComp):
+            value = self.visit_value_check_type_list_comp(node, mys_type)
+        elif isinstance(node, ast.DictComp):
+            value = self.visit_value_check_type_dict_comp(node, mys_type)
         elif is_constant(node):
             value = self.visit(node)
 
@@ -2329,61 +2486,61 @@ class BaseVisitor(ast.NodeVisitor):
     def visit_Continue(self, _node):
         return 'continue;'
 
+    def visit_assert_compare(self, node, prepare):
+        items, ops = self.visit_compare(node.test)
+        variables = []
+
+        for mys_type, value in items:
+            variable = self.unique('var')
+            cpp_type = self.mys_to_cpp_type(mys_type)
+            prepare.append(f'const {cpp_type} {variable} = {value};')
+            variables.append((variable, mys_type))
+
+        conds = []
+        message = []
+
+        for i, op_class in enumerate(ops):
+            message.append(format_assert_str(*variables[i], self.context))
+
+            if op_class == ast.In:
+                conds.append(
+                    f'contains({variables[i][0]}, {variables[i + 1][0]})')
+                message.append('" in "')
+            elif op_class == ast.NotIn:
+                conds.append(
+                    f'!contains({variables[i][0]}, {variables[i + 1][0]})')
+                message.append('" not in "')
+            elif op_class == ast.Is:
+                variable_1, variable_2 = compare_assert_is_variables(
+                    variables[i],
+                    variables[i + 1])
+                conds.append(f'is({variable_1}, {variable_2})')
+                message.append('" is "')
+            elif op_class == ast.IsNot:
+                variable_1, variable_2 = compare_assert_is_variables(
+                    variables[i],
+                    variables[i + 1])
+                conds.append(f'!is({variable_1}, {variable_2})')
+                message.append('" is not "')
+            else:
+                op = OPERATORS[op_class]
+                conds.append(f'({variables[i][0]} {op} {variables[i + 1][0]})')
+                message.append(f'" {op} "')
+
+        message.append(f'{format_assert_str(*variables[-1], self.context)}')
+        cond = ' && '.join(conds)
+        message = ' + '.join(message)
+
+        return cond, message
+
     def visit_Assert(self, node):
         prepare = []
 
         if isinstance(node.test, ast.Compare):
-            items, ops = self.visit_compare(node.test)
-            variables = []
-
-            for mys_type, value in items:
-                variable = self.unique('var')
-                cpp_type = self.mys_to_cpp_type(mys_type)
-                prepare.append(f'const {cpp_type} {variable} = {value};')
-                variables.append((variable, mys_type))
-
-            conds = []
-            messages = []
-
-            for i, op_class in enumerate(ops):
-                if op_class == ast.In:
-                    conds.append(
-                        f'contains({variables[i][0]}, {variables[i + 1][0]})')
-                    messages.append(
-                        f'{format_print_arg(variables[i])} << " in "')
-                elif op_class == ast.NotIn:
-                    conds.append(
-                        f'!contains({variables[i][0]}, {variables[i + 1][0]})')
-                    messages.append(
-                        f'{format_print_arg(variables[i])} << " not '
-                        f'in "')
-                elif op_class == ast.Is:
-                    variable_1, variable_2 = compare_assert_is_variables(
-                        variables[i],
-                        variables[i + 1])
-                    conds.append(f'is({variable_1}, {variable_2})')
-                    messages.append(
-                        f'{format_print_arg(variables[i])} << " is "')
-                elif op_class == ast.IsNot:
-                    variable_1, variable_2 = compare_assert_is_variables(
-                        variables[i],
-                        variables[i + 1])
-                    conds.append(f'!is({variable_1}, {variable_2})')
-                    messages.append(
-                        f'{format_print_arg(variables[i])} << " is '
-                        'not "')
-                else:
-                    op = OPERATORS[op_class]
-                    conds.append(f'({variables[i][0]} {op} {variables[i + 1][0]})')
-                    messages.append(
-                        f'{format_print_arg(variables[i])} << " {op} "')
-
-            messages.append(f'{format_print_arg(variables[-1])}')
-            cond = ' && '.join(conds)
-            message = ' << '.join(messages)
+            cond, message = self.visit_assert_compare(node, prepare)
         else:
-            message = '"todo"'
             cond = self.visit(node.test)
+            message = 'String("todo")'
 
         filename = self.filename
         line = node.lineno
@@ -2392,9 +2549,10 @@ class BaseVisitor(ast.NodeVisitor):
             '#if defined(MYS_TEST) || !defined(NDEBUG)'
         ] + prepare + [
             f'if (!({cond})) {{',
-            f'    std::cout << "{filename}:{line}: assert " << {message} << '
-            '" is not true" << std::endl;',
-            '    std::make_shared<AssertionError>("todo is not true")->__throw();',
+            f'    std::cout << "{filename}:{line}: assert " << '
+            f'PrintString({message}) << " is not true" << std::endl;',
+            f'    std::make_shared<AssertionError>({message} + " is not true")'
+            '->__throw();',
             '}',
             '#endif'
         ])
@@ -2444,7 +2602,7 @@ class BaseVisitor(ast.NodeVisitor):
     def visit_FormattedValue(self, node):
         value = self.visit(node.value)
         value = format_arg((value, self.context.mys_type))
-        value = format_str(value, self.context.mys_type)
+        value = format_str(value, self.context.mys_type, self.context)
         self.context.mys_type = 'string'
 
         return value
@@ -2572,7 +2730,19 @@ class BaseVisitor(ast.NodeVisitor):
         return f'(({test}) ? ({body}) : ({orelse}))'
 
     def visit_ListComp(self, node):
-        raise CompileError("list comprehension is not implemented", node)
+        value_type = ValueTypeVisitor(self.source_lines, self.context).visit(node)
+        value_type = reduce_type(value_type)
+
+        return self.visit_value_check_type(node, value_type)
+
+    def visit_DictComp(self, node):
+        value_type = ValueTypeVisitor(self.source_lines, self.context).visit(node)
+        value_type = reduce_type(value_type)
+
+        return self.visit_value_check_type(node, value_type)
+
+    def visit_SetComp(self, node):
+        raise CompileError("set comprehension is not implemented", node)
 
     def visit_Slice(self, node):
         lower = None

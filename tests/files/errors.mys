@@ -43,6 +43,17 @@ def test_empty_error():
 
     assert res == 1
 
+@test
+def test_except_error_empty_error():
+    res = ""
+
+    try:
+        raise EmptyError()
+    except Error as e:
+        res = str(e)
+
+    assert res == "EmptyError()"
+
 class MemberError(Error):
     x: i64
 
@@ -112,6 +123,20 @@ def test_member_error_re_raise_2():
     assert res == 5
 
 @test
+def test_member_error_re_raise_error():
+    res = 0
+
+    try:
+        raise MemberError(3)
+    except Error as e:
+        try:
+            raise e
+        except MemberError as k:
+            res = k.x
+
+    assert res == 3
+
+@test
 def test_member_error_str():
     res = ""
 
@@ -127,10 +152,10 @@ def test_1():
     res = 0
 
     try:
-        raise TypeError("foo")
+        raise NotImplementedError("foo")
     except ValueError:
         res = 1
-    except TypeError:
+    except NotImplementedError:
         res = 2
     finally:
         assert res == 2
@@ -153,7 +178,7 @@ def test_2():
             res = 11
             raise
 
-        raise TypeError()
+        raise UnreachableError()
     except ValueError:
         assert res == 11
         res = 12
@@ -188,7 +213,7 @@ def test_define_variable_in_try_except_branches_1():
 def test_define_variable_in_try_except_branches_2():
     try:
         x = 3
-    except GeneralError:
+    except SystemExitError:
         x = 2
     except ValueError:
         x = 1
@@ -199,7 +224,7 @@ def test_define_variable_in_try_except_branches_2():
 def test_define_variable_in_try_except_branches_3():
     try:
         x = 3
-    except GeneralError:
+    except SystemExitError:
         x = 2
     else:
         pass
@@ -210,7 +235,7 @@ def test_define_variable_in_try_except_branches_3():
 def test_define_variable_in_try_except_branches_4():
     try:
         x = 3
-    except GeneralError:
+    except SystemExitError:
         x = 2
     else:
         x = 4
@@ -224,7 +249,7 @@ def test_define_variable_in_all_branches_1():
             x = 1
         else:
             x = 2
-    except GeneralError:
+    except SystemExitError:
         try:
             x = 3
         except:
@@ -258,15 +283,24 @@ def test_value_error_as():
     assert res == "ValueError(message=\"hi\")"
 
 @test
+def test_except_error():
+    res = ""
+
+    try:
+        raise ValueError("hi")
+    except Error as e:
+        res = str(e)
+
+    assert res == "ValueError(message=\"hi\")"
+
+@test
 def test_builtin_errors_str():
-    assert str(ValueError("1")) == "ValueError(message=\"1\")"
-    assert str(TypeError("2")) == "TypeError(message=\"2\")"
-    assert str(ValueError("3")) == "ValueError(message=\"3\")"
-    assert str(GeneralError("4")) == "GeneralError(message=\"4\")"
-    assert str(NoneError("5")) == "NoneError(message=\"5\")"
-    assert str(KeyError("6")) == "KeyError(message=\"6\")"
-    assert str(IndexError("7")) == "IndexError(message=\"7\")"
-    assert str(NotImplementedError("8")) == "NotImplementedError(message=\"8\")"
-    assert str(ZeroDivisionError("9")) == "ZeroDivisionError(message=\"9\")"
     assert str(AssertionError("10")) == "AssertionError(message=\"10\")"
+    assert str(IndexError("7")) == "IndexError(message=\"7\")"
+    assert str(KeyError("6")) == "KeyError(message=\"6\")"
+    assert str(NoneError("5")) == "NoneError(message=\"5\")"
+    assert str(NotImplementedError("8")) == "NotImplementedError(message=\"8\")"
     assert str(SystemExitError("11")) == "SystemExitError(message=\"11\")"
+    assert str(UnreachableError("11")) == "UnreachableError(message=\"11\")"
+    assert str(ValueError("1")) == "ValueError(message=\"1\")"
+    assert str(ValueError("3")) == "ValueError(message=\"3\")"

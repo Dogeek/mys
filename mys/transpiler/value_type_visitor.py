@@ -600,3 +600,58 @@ class ValueTypeVisitor(ast.NodeVisitor):
             return self.visit_call_generic(node)
         else:
             raise CompileError("not callable", node.func)
+
+    def visit_define_local_variables(self, node, mys_type):
+        if isinstance(node, ast.Name):
+            if not node.id.startswith('_'):
+                self.context.define_local_variable(node.id, mys_type, node)
+        elif isinstance(node, ast.Tuple):
+            for item, item_mys_type in zip(node.elts, mys_type):
+                self.visit_define_local_variables(item, item_mys_type)
+        else:
+            raise CompileError("unsupported type", node)
+
+    def visit_ListComp(self, node):
+        if len(node.generators) != 1:
+            raise CompileError("only one for-loop allowed", node)
+
+        generator = node.generators[0]
+        iter_type = self.visit(generator.iter)
+
+        if isinstance(iter_type, list):
+            item_type = iter_type[0]
+        elif isinstance(iter_type, Dict):
+            item_type = (iter_type.key_type, iter_type.value_type)
+        else:
+            raise CompileError("unsupported type", node)
+
+        self.context.push()
+        self.visit_define_local_variables(generator.target, item_type)
+        result_type = [self.visit(node.elt)]
+        self.context.pop()
+
+        return result_type
+
+    def visit_DictComp(self, node):
+        if len(node.generators) != 1:
+            raise CompileError("only one for-loop allowed", node)
+
+        generator = node.generators[0]
+        iter_type = self.visit(generator.iter)
+
+        if isinstance(iter_type, list):
+            item_type = iter_type[0]
+        elif isinstance(iter_type, Dict):
+            item_type = (iter_type.key_type, iter_type.value_type)
+        else:
+            raise CompileError("unsupported type", node)
+
+        self.context.push()
+        self.visit_define_local_variables(generator.target, item_type)
+        result_type = Dict(self.visit(node.key), self.visit(node.value))
+        self.context.pop()
+
+        return result_type
+
+    def visit_SetComp(self, node):
+        raise CompileError("set comprehension is not implemented", node)

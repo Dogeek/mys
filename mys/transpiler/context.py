@@ -17,7 +17,7 @@ class Context:
                  specialized_classes=None):
         self.name = '.'.join(module_levels)
         self._stack = [[]]
-        self._local_variables = {}
+        self.local_variables = {}
         self._global_variables = {}
         self._classes = {}
         self._traits = {}
@@ -30,6 +30,7 @@ class Context:
         self._name_to_full_name ={}
         self.specialized_functions = specialized_functions
         self.specialized_classes = specialized_classes
+        self.comprehensions = []
 
     def unique_number(self):
         self.unique_count += 1
@@ -57,7 +58,7 @@ class Context:
         if name in self._name_to_full_name:
             raise CompileError(f"redefining '{name}'", node)
 
-        self._local_variables[name] = mys_type
+        self.local_variables[name] = mys_type
         self._stack[-1].append(name)
 
     def is_local_variable_defined(self, name):
@@ -65,10 +66,10 @@ class Context:
 
         """
 
-        return name in self._local_variables
+        return name in self.local_variables
 
     def get_local_variable_type(self, name):
-        return self._local_variables[name]
+        return self.local_variables[name]
 
     def define_global_variable(self, name, full_name, mys_type, _node):
         self._global_variables[name] = mys_type
@@ -245,7 +246,7 @@ class Context:
         result = {}
 
         for name in self._stack[-1]:
-            result[name] = self._local_variables.pop(name)
+            result[name] = self.local_variables.pop(name)
 
         self._stack.pop()
 

@@ -155,6 +155,7 @@ class SourceVisitor(ast.NodeVisitor):
         ] + self.forward_declarations
           + self.enums
           + [constant[1] for constant in self.context.constants.values()]
+          + self.context.comprehensions
           + self.body + [
             '}'
         ] + self.main())
